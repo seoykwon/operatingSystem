@@ -18,7 +18,7 @@ If your Ubuntu has gcc-13 as default, you won't be able to compile xv6 saying th
 
 ``` make qemu-nox ``` to boot the xv6.
 
-``` 'Ctrl' + 'a' + 'x' ``` to exit the booted xv6.
+``` Ctrl + 'a' -> 'x' ``` to exit the booted xv6.
 
 ## 1. System Call (getnice, setnice, ps)
 - add booting message
