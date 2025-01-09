@@ -16,6 +16,10 @@ sudo apt install qemu-system
 ```
 If your Ubuntu has gcc-13 as default, you won't be able to compile xv6 saying there is a infinite loop. Follow the following instruction to downgrade your gcc version: <https://webhostinggeeks.com/howto/how-to-downgrade-gcc-version-on-ubuntu/>
 
+``` make qemu-nox ``` to boot the xv6.
+
+``` 'Ctrl' + 'a' + 'x' ``` to exit the booted xv6.
+
 ## 1. System Call (getnice, setnice, ps)
 - add booting message
 
