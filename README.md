@@ -27,20 +27,20 @@ If your Ubuntu has gcc-13 as default, you won't be able to compile xv6 saying th
 
 in [init.c]
 
-- getnice, setnice, ps
-edit [usys.S] [syscall.h] [syscall.c] [sysproc.c] [proc.h] [proc.c] [defs.h] [user.h] [mytest.c]
+#### getnice, setnice, ps
+- edit [usys.S] [syscall.h] [syscall.c] [sysproc.c] [proc.h] [proc.c] [defs.h] [user.h] [mytest.c]
 
-- getnice()
-  prints nice value of given pid (process id)
+#### getnice()
+- prints nice value of given pid (process id)
 
-- setnice()
-  sets nice value of given pid
+#### setnice()
+- sets nice value of given pid
 
-- ps()
-  prints process information: name, pid, state, priority
-  when given existing pid, it prints process information of given pid
-  when 0 is given, ps() prints every process' information
-  when non-existent pid is given, nothing gets printed out
+#### ps()
+- prints process information: name, pid, state, priority
+- when given existing pid, it prints process information of given pid
+- when 0 is given, ps() prints every process' information
+- when non-existent pid is given, nothing gets printed out
   
 ## 2. CFS Scheduler
 
