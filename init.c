@@ -21,7 +21,7 @@ main(void)
 
   for(;;){
     printf(1, "init: starting sh\n");
-    printf(1, "[seoykwon] Welcome to beautiful xv6 world!");
+    printf(1, "[seoykwon] Welcome to beautiful xv6 world!\n");
     
     pid = fork();
     if(pid < 0){
