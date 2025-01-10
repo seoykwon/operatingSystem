@@ -7,6 +7,17 @@
 #include "proc.h"
 #include "spinlock.h"
 
+int weight_table[40] = {
+/*  0*/ 88761, 71755, 56483, 46273, 36291,
+/*  5*/ 29154, 23254, 18705, 14949, 11916,
+/* 10*/  9548,  7620,  6100,  4904,  3906,
+/* 15*/  3121,  2501,  1991,  1586,  1277,
+/* 20*/  1024,   820,   655,   526,   423,
+/* 25*/   335,   272,   215,   172,   137,
+/* 30*/   110,    87,    70,    56,    45,
+/* 35*/    36,    29,    23,    18,    15
+};
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -90,6 +101,10 @@ found:
   p->pid = nextpid++;
   // nice value
   p->nice = 20;
+  p->runtime = 0;
+  p->vruntime = 0;
+  p->time_slice = 0;
+  p->run_d_w = 0;
 
   release(&ptable.lock);
 
@@ -198,6 +213,8 @@ fork(void)
     np->state = UNUSED;
     return -1;
   }
+  // set vruntime
+  np->vruntime = curproc->vruntime;
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
@@ -321,10 +338,50 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+// void
+// scheduler(void)
+// {
+//   struct proc *p;
+//   struct cpu *c = mycpu();
+//   c->proc = 0;
+  
+//   for(;;){
+//     // Enable interrupts on this processor.
+//     sti();
+
+//     // Loop over process table looking for process to run.
+//     acquire(&ptable.lock);
+//     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//       if(p->state != RUNNABLE)
+//         continue;
+
+//       // Switch to chosen process.  It is the process's job
+//       // to release ptable.lock and then reacquire it
+//       // before jumping back to us.
+//       c->proc = p;
+//       switchuvm(p);
+//       p->state = RUNNING;
+
+//       swtch(&(c->scheduler), p->context);
+//       switchkvm();
+
+//       // Process is done running for now.
+//       // It should have changed its p->state before coming back.
+//       c->proc = 0;
+//     }
+//     release(&ptable.lock);
+
+//   }
+// }
+
 void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *p1;
+  struct proc *p2;
+  struct proc *most_p;
+  int total_weight;
   struct cpu *c = mycpu();
   c->proc = 0;
   
@@ -332,28 +389,36 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      total_weight = 0;
+      for(p1 = ptable.proc; p1 < &ptable.proc[NPROC]; p1++){
+        if(p1->state != RUNNABLE) continue;
+        total_weight += weight_table[p1->nice];
+      }
 
-      swtch(&(c->scheduler), p->context);
+      most_p = p;
+      for(p2 = ptable.proc; p2 < &ptable.proc[NPROC]; p2++){
+        if(p2->state != RUNNABLE) continue;
+        if(most_p->vruntime > p2->vruntime) {
+          most_p = p2;
+          }
+      }
+      
+      most_p->time_slice = ((10 * (weight_table[most_p->nice])) / total_weight) + ( (10 * (weight_table[most_p->nice])) % total_weight !=0 );
+
+      c->proc = most_p;
+      switchuvm(most_p);
+      most_p->state = RUNNING;
+
+      swtch(&(c->scheduler), most_p->context);
       switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
 
@@ -459,11 +524,43 @@ sleep(void *chan, struct spinlock *lk)
 static void
 wakeup1(void *chan)
 {
+  // struct proc *p;
+
+  // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  //   if(p->state == SLEEPING && p->chan == chan)
+  //     p->state = RUNNABLE;
   struct proc *p;
 
+  int min_vrun = 0;
+  int is_run = 0;
+  int vrun_1tick = 0;
+
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == RUNNABLE){
+      is_run = 1;
+      min_vrun = p->vruntime;
+    }
+
+  if (is_run == 1){
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      if(p->state == RUNNABLE){
+        if (min_vrun > p->vruntime) min_vrun = p->vruntime;
+      }
+  }
+
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == SLEEPING && p->chan == chan){
+      vrun_1tick = ((1000*1024)/(weight_table[p->nice]));
+      if(min_vrun < vrun_1tick){
+        p->vruntime = 0;
+      }
+      else{
+        p->vruntime = min_vrun - vrun_1tick;
+        //cprintf("set %d-> vrun %d (%d - %d)\n",p->pid, p->vruntime, min_vrun, vrun_1tick);
+      }
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -572,15 +669,53 @@ setnice(int pid, int value)
   return -1;
 }
 
+// void
+// ps(int pid)
+// {
+//   static char* states[] = {
+//     "UNUSED  ",
+//     "EMBRYO  ",
+//     "SLEEPING",
+//     "RUNNABLE",
+//     "RUNNING ",
+//     "ZOMBIE  "
+//   };
+
+//   struct proc *p;
+//   acquire(&ptable.lock);
+//   int valid_pid = 0;
+
+//   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+//     if(p->pid == pid) valid_pid = 1;
+//   if (pid == 0) valid_pid = 1;
+
+//   if (valid_pid == 0){
+//     release(&ptable.lock);
+//     return;
+//   }
+
+//   cprintf("name\tpid\tstate\t\tpriority\n");
+
+//   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//     if((pid == 0) || (p->pid == pid)){
+//       if (p->state != 0)
+//         cprintf("%s\t%d\t%s\t%d\n", p->name, p->pid, states[p->state], p->nice);
+//     }
+//   }
+
+//   release(&ptable.lock);
+//   return;
+// }
+
 void
 ps(int pid)
 {
   static char* states[] = {
-    "UNUSED  ",
-    "EMBRYO  ",
-    "SLEEPING",
-    "RUNNABLE",
-    "RUNNING ",
+    "UNUSED  ", 
+    "EMBRYO  ", 
+    "SLEEPING", 
+    "RUNNABLE", 
+    "RUNNING ", 
     "ZOMBIE  "
   };
 
@@ -591,21 +726,101 @@ ps(int pid)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->pid == pid) valid_pid = 1;
   if (pid == 0) valid_pid = 1;
-
-  if (valid_pid == 0){
+  
+  if (valid_pid==0) {
     release(&ptable.lock);
     return;
   }
 
-  cprintf("name\tpid\tstate\t\tpriority\n");
+  int getlens(char* s){
+    int len = 0;
+    while(s[len]) len++;
+    return len;
+  }
+
+  int getleni(int n){
+    int len = 0;
+    if (n==0) return 1;
+    while(n != 0){
+      n = n/10;
+      ++len;
+    }
+    return len;
+  }
+
+  int maxl_name = 0;
+  int maxl_runtime = 0;
+  int maxl_vruntime = 0;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if((pid == 0) || (p->pid == pid)){
-      if (p->state != 0)
-        cprintf("%s\t%d\t%s\t%d\n", p->name, p->pid, states[p->state], p->nice);
+      if (p->state != 0){
+          int name_len = getlens(p->name);
+          if(maxl_name<name_len) maxl_name = name_len;
+
+          int runtime_len = getleni(p->runtime);
+          if(maxl_runtime<runtime_len) maxl_runtime = runtime_len;
+
+          int vruntime_len = getleni(p->vruntime);
+          if(maxl_vruntime<vruntime_len) maxl_vruntime = vruntime_len;
+      }
     }
   }
 
+  if (maxl_runtime<6) maxl_runtime = 6;
+  if (maxl_vruntime<6) maxl_vruntime = 6;
+  int name_range = ((maxl_name/6)+1)*6;
+  int runtime_range = ((maxl_runtime/6)+1)*6;
+  int vruntime_range = ((maxl_vruntime/6)+1)*6;
+
+  cprintf("name");
+  for(int i=0;i<(name_range-4);i++) cprintf(" ");
+  cprintf("pid      ");
+  cprintf("state       ");
+  cprintf("priority    ");
+  cprintf("runtime/weight    ");
+  cprintf("runtime");
+  for(int i=0;i<(runtime_range-7);i++) cprintf(" ");
+  cprintf("vruntime");
+  for(int i=0;i<(vruntime_range-8);i++) cprintf(" ");
+  cprintf("tick %d",ticks*1000);
+  cprintf("\n");
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if((pid == 0) || (p->pid == pid)){
+      if (p->state != 0){
+
+        cprintf("%s",p->name);
+        int l1 = getlens(p->name);
+        for(int i=0;i<(name_range-l1);i++) cprintf(" ");
+        
+        cprintf("%d",p->pid);
+        int l2 = getleni(p->pid);
+        for(int i=0;i<(9-l2);i++) cprintf(" ");
+
+        cprintf("%s",states[p->state]);
+        int l3 = getlens(states[p->state]);
+        for(int i=0;i<(12-l3);i++) cprintf(" ");
+
+        cprintf("%d",p->nice);
+        int l4 = getleni(p->nice);
+        for(int i=0;i<(12-l4);i++) cprintf(" ");
+
+        cprintf("%d",p->run_d_w);
+        int l5 = getleni(p->run_d_w);
+        for(int i=0;i<(18-l5);i++) cprintf(" ");
+
+        cprintf("%d",p->runtime);
+        int l6 = getleni(p->runtime);
+        for(int i=0;i<(runtime_range-l6);i++) cprintf(" ");
+
+        cprintf("%d",p->vruntime);
+        int l7 = getleni(p->vruntime);
+        for(int i=0;i<(vruntime_range-l7);i++) cprintf(" ");  
+        cprintf("\n");
+      }
+    }
+  }
   release(&ptable.lock);
   return;
 }

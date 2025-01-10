@@ -8,6 +8,17 @@
 #include "traps.h"
 #include "spinlock.h"
 
+int weight_table2[40] = {
+/*  0*/ 88761, 71755, 56483, 46273, 36291,
+/*  5*/ 29154, 23254, 18705, 14949, 11916,
+/* 10*/  9548,  7620,  6100,  4904,  3906,
+/* 15*/  3121,  2501,  1991,  1586,  1277,
+/* 20*/  1024,   820,   655,   526,   423,
+/* 25*/   335,   272,   215,   172,   137,
+/* 30*/   110,    87,    70,    56,    45,
+/* 35*/    36,    29,    23,    18,    15
+};
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -103,8 +114,17 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER){
+      myproc()->runtime = myproc()->runtime + 1000;
+      myproc()->vruntime = myproc()->vruntime + ((1000*1024)/(weight_table2[myproc()->nice]));
+      myproc()->run_d_w = myproc()->runtime / weight_table2[myproc()->nice];
+      myproc()->time_slice--;
+      if(myproc()->time_slice<=0) {
+        myproc()->time_slice = 0;
+        yield();
+        }
+     }
+    // yield();
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
