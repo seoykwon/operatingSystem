@@ -44,7 +44,7 @@ in [init.c]
   
 ## 2. CFS Scheduler
 
-Makefile cpu to 1, so that we can test our programmed scheduler.\n
+Makefile cpu to 1, so that we can test our programmed scheduler.'\n'
 Add variables in proc struct such as runtime, vruntime, time_slice, run_d_w (runtime/weight). \n
 The default nice value is 20.\n
 The Scheduler function in [proc.c] uses p1, p2, most_p. P1 runs over ptable to calculate total_weight to calculate time slice. P2 runs over ptable to find the process that has the least vruntime and saves the pid in most_p.\n
