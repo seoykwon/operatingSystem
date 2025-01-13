@@ -44,14 +44,14 @@ in [init.c]
   
 ## 2. CFS Scheduler
 
-Makefile cpu to 1, so that we can test our programmed scheduler.'\n'
-Add variables in proc struct such as runtime, vruntime, time_slice, run_d_w (runtime/weight). \n
-The default nice value is 20.\n
-The Scheduler function in [proc.c] uses p1, p2, most_p. P1 runs over ptable to calculate total_weight to calculate time slice. P2 runs over ptable to find the process that has the least vruntime and saves the pid in most_p.\n
-Time slice calculation : ```most_p->time_slice = ((10 * (weight_table[most_p->nice])) / total_weight) + ( (10 * (weight_table[most_p->nice])) % total_weight !=0 );```\n
+Makefile cpu to 1, so that we can test our programmed scheduler.
+Add variables in proc struct such as runtime, vruntime, time_slice, run_d_w (runtime/weight). 
+The default nice value is 20.
+The Scheduler function in [proc.c] uses p1, p2, most_p. P1 runs over ptable to calculate total_weight to calculate time slice. P2 runs over ptable to find the process that has the least vruntime and saves the pid in most_p.
+Time slice calculation : ```most_p->time_slice = ((10 * (weight_table[most_p->nice])) / total_weight) + ( (10 * (weight_table[most_p->nice])) % total_weight !=0 );```
 Saves most_p in c->proc, then use ```swtch(&(c->scheduler), most_p->context)``` to go to [trap.c].
 
-
+(I could've used priority_queue instead of looping through the whole array, but the TA told my class to just loop through it)
 
 ## 3. Virtual Memory (mmap)
 
